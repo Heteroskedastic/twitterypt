@@ -54,6 +54,7 @@ def upload_public_key():
     formatted_pub_key = format_public_key(short_url)
     new_desc = desc[: idx1] + formatted_pub_key + desc[idx2:]
     twitter_api.UpdateProfile(description=new_desc)
+    print('Public key uploaded to your profile!')
 
 
 def post_twitter_message(screen_name, message=None):

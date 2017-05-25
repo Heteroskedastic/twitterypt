@@ -18,10 +18,10 @@
 
 ## Steps to create a pair public/private key
 1. if you want to generate new public/private keys:
-1. $ python twitterypt-cli.py --keys-gen
+    - $ python twitterypt-cli.py --keys-gen
 1. else if you have alread a public/private keys:
-1. $ python twitterypt-cli.py --set-private-key
-1. $ python twitterypt-cli.py --set-public-key
+    - $ python twitterypt-cli.py --set-private-key
+    - $ python twitterypt-cli.py --set-public-key
 
 ## Questions:
 1. How to upload public key to my profile?

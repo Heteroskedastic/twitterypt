@@ -59,9 +59,12 @@ def upload_public_key():
 
 def post_twitter_message(screen_name, message=None):
     if message is None:
-        print('Enter your message: ')
+        print('Enter your message: (Press double enter or Ctrl+D to finish)')
         message = _input_lines()
-    return send_to_twitter_account(message, screen_name)
+    print('>>> Sending ... ', end='', flush=True)
+    res = send_to_twitter_account(message, screen_name)
+    print('[OK]')
+    return res
 
 
 def download_last_message(count=10):
@@ -126,14 +129,14 @@ def keys_gen():
 
 
 def set_private_key():
-    print('Please enter your RSA private key:')
+    print('Please enter your RSA private key: (Press double enter or Ctrl+D to finish)')
     key = _input_lines()
     cfg.update({'private_key': key})
     print('private key update!')
 
 
 def set_public_key():
-    print('Please enter your RSA public key:')
+    print('Please enter your RSA public key: (Press double enter or Ctrl+D to finish)')
     key = _input_lines()
     cfg.update({'public_key': key})
     print('public key update!')

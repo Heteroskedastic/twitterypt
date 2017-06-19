@@ -2,11 +2,15 @@ import argparse
 
 import sys
 import traceback
+from cryptography.hazmat.backends import default_backend
+from cryptography.hazmat.primitives import serialization
 
 from twitterypt.utils import generate_key_pair, get_twitter_api, TWITTERYPT_PREFIX, make_public_key_long_url, \
     format_public_key, send_to_twitter_account, decrypt_message
 from twitterypt.config import cfg
 
+
+RSA_BITS_SIZE = 1024
 
 class TwitteryptCLIException(Exception):
     pass
@@ -123,7 +127,7 @@ def keys_gen():
         if prompt in ('Y', 'y', 'yes'):
             confirm = True
     if confirm:
-        private_key, public_key = generate_key_pair()
+        private_key, public_key = generate_key_pair(key_size=RSA_BITS_SIZE)
         cfg.update({'private_key': private_key.decode(), 'public_key': public_key.decode()})
         print('New public/private key generated!')
 
@@ -131,6 +135,14 @@ def keys_gen():
 def set_private_key():
     print('Please enter your RSA private key: (Press double enter or Ctrl+D to finish)')
     key = _input_lines()
+    try:
+        key_obj = serialization.load_pem_private_key(key, password=None, backend=default_backend())
+    except Exception:
+        print('Invalid private key!')
+        return
+    if key_obj.key_size != RSA_BITS_SIZE:
+        print('Incorrect key length: [{}]! rsa bits size should be: [{}]'.format(key_obj.key_size, RSA_BITS_SIZE))
+        return
     cfg.update({'private_key': key})
     print('private key update!')
 
@@ -138,6 +150,14 @@ def set_private_key():
 def set_public_key():
     print('Please enter your RSA public key: (Press double enter or Ctrl+D to finish)')
     key = _input_lines()
+    try:
+        key_obj = serialization.load_pem_public_key(key, backend=default_backend())
+    except Exception:
+        print('Invalid public key!')
+        return
+    if key_obj.key_size != RSA_BITS_SIZE:
+        print('Incorrect key length: [{}]! rsa bits size should be: [{}]'.format(key_obj.key_size, RSA_BITS_SIZE))
+        return
     cfg.update({'public_key': key})
     print('public key update!')
 

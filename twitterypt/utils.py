@@ -3,9 +3,6 @@ import string
 import base64
 import requests
 import twitter
-
-from twitterypt.config import cfg
-
 try:
     # python 3
     from urllib.parse import urlencode, urlparse, parse_qs
@@ -13,8 +10,14 @@ except ImportError:
     # python 2
     from urllib import urlencode
     from urlparse import urlparse, parse_qs
-from Crypto.PublicKey import RSA
-from Crypto import Random
+from cryptography.hazmat.backends import default_backend
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import padding, rsa
+from cryptography.hazmat.primitives import hashes
+
+from twitterypt.config import cfg
+
+#echo "CYPHER_MESSAGE" |openssl base64 -d -A | openssl rsautl -decrypt -oaep -inkey private.pem
 
 LONG_BASE_URL = 'http://mock.co/'
 TWITTERYPT_PREFIX = '|EnCt|'
@@ -22,6 +25,9 @@ PUBLIC_KEY_BEGIN = '-----BEGIN PUBLIC KEY-----'
 PUBLIC_KEY_END = '-----END PUBLIC KEY-----'
 PRIVATE_KEY_BEGIN = '-----BEGIN RSA PRIVATE KEY-----'
 PRIVATE_KEY_END = '-----END RSA PRIVATE KEY-----'
+
+RSA_HASH_ALGO = hashes.SHA1()
+RSA_PADDING = padding.OAEP(mgf=padding.MGF1(algorithm=RSA_HASH_ALGO), algorithm=RSA_HASH_ALGO, label=None)
 
 
 # public_key = '-----BEGIN PUBLIC KEY-----\nMIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDuivvGASfW5febaZOM43Px47pI\nPQ3cpq+c68D4gef8G+KgG3mgAXzlWKGtggwykqZRuikDZjHUDmcyphdhNVX50RSQ\n1VN8w6ldryS/DJgx3KsJu3u1cyZDtO1N/07ci3V53qBeNGaZx4N/UhH5Ug7hspIg\nMCYlFAjxwPusoC+s/wIDAQAB\n-----END PUBLIC KEY-----'
@@ -62,11 +68,37 @@ def get_redirected_url(url, level=1):
     return location
 
 
-def generate_key_pair(as_base64=True):
-    random_generator = Random.new().read
-    key = RSA.generate(1024, random_generator)
-    public_key = key.publickey()
-    return (key.exportKey(), public_key.exportKey()) if as_base64 else (key, public_key)
+def calc_rsa_encrypted_data_length(key):
+    if not isinstance(key, (rsa.RSAPrivateKey, rsa.RSAPublicKey)):
+        raise TypeError("key must be an RSA public or private key")
+    return (key.key_size + 6) >> 3
+
+
+def calc_rsa_max_messsage_length(key, hash_algorithm):
+    if not isinstance(key, (rsa.RSAPrivateKey, rsa.RSAPublicKey)):
+        raise TypeError("key must be an RSA public or private key")
+
+    max_lenth = calc_rsa_encrypted_data_length(key)
+    if hash_algorithm:
+        max_lenth = max_lenth - 2 * hash_algorithm.digest_size - 2
+    assert max_lenth >= 0
+    return max_lenth
+
+
+def generate_key_pair(as_base64=True, key_size=1024):
+    private_key = rsa.generate_private_key(public_exponent=65537, key_size=key_size, backend=default_backend())
+    public_key = private_key.public_key()
+    if as_base64:
+        private_key = private_key.private_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PrivateFormat.TraditionalOpenSSL,
+            encryption_algorithm=serialization.NoEncryption()
+        )
+        public_key = public_key.public_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PublicFormat.SubjectPublicKeyInfo
+        )
+    return (private_key, public_key)
 
 
 def make_public_key_long_url(public_key, base_url=LONG_BASE_URL):
@@ -77,26 +109,37 @@ def make_public_key_long_url(public_key, base_url=LONG_BASE_URL):
     return '{}?{}'.format(base_url, args)
 
 
-def encrypt(message, public_key, chunk=128):
+def encrypt(message, public_key, as_base64=True, _padding=RSA_PADDING):
     if isinstance(message, str):
         message = message.encode()
-    public_key = RSA.importKey(public_key)
+    if isinstance(public_key, str):
+        public_key = public_key.encode()
+    public_key = serialization.load_pem_public_key(public_key, backend=default_backend())
+
     enc_data = b''
+    chunk = calc_rsa_max_messsage_length(public_key, getattr(_padding, '_algorithm', None))
+    enc_data_length = calc_rsa_encrypted_data_length(public_key)
     for i in range(0, len(message), chunk):
         part = message[i: i+chunk]
-        enc_part = public_key.encrypt(part, 32)[0]
-        enc_data += ((chunk - len(enc_part))*b'\x00' + enc_part)
-    return base64.b64encode(enc_data)
+        enc_part = public_key.encrypt(part, _padding)
+        # enc_data += enc_part
+        enc_data += ((enc_data_length - len(enc_part)) * b'\x00' + enc_part)
+    return base64.b64encode(enc_data) if as_base64 else enc_data
 
 
-def decrypt(message, private_key, is_base64=True, chunk=128):
-    private_key = RSA.importKey(private_key)
+def decrypt(message, private_key, is_base64=True, _padding=RSA_PADDING):
+    if isinstance(private_key, str):
+        private_key = private_key.encode()
+    private_key = serialization.load_pem_private_key(private_key, password=None, backend=default_backend())
     if is_base64:
         message = base64.b64decode(message)
+
     dec_data = b''
+    chunk = calc_rsa_encrypted_data_length(private_key)
     for i in range(0, len(message), chunk):
         part = message[i: i+chunk]
-        dec_data += (private_key.decrypt(part))
+        dec_part = private_key.decrypt(part, _padding)
+        dec_data += (dec_part)
     return dec_data
 
 
